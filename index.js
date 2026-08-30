@@ -24,13 +24,22 @@ app.get('/', (req, res) => {
       <head><title>Pusacat Control Panel</title></head>
       <body style="font-family: sans-serif; background: #1e1e1e; color: #fff; padding: 40px;">
         <h2>🐾 Pusacat Control Panel</h2>
-        <p>Use the links below to control your stand-in bot:</p>
-        <ul>
-          <li><a href="/join?channelId=YOUR_VC_ID&token=${ADMIN_TOKEN}" style="color: #4da6ff;">Join Voice Channel</a></li>
-          <li><a href="/deafen?state=true&token=${ADMIN_TOKEN}" style="color: #4da6ff;">Deafen Bot</a></li>
-          <li><a href="/deafen?state=false&token=${ADMIN_TOKEN}" style="color: #4da6ff;">Undeafen Bot</a></li>
-          <li><a href="/leave&token=${ADMIN_TOKEN}" style="color: #ff4d4d;">Leave Voice Channel</a></li>
-        </ul>
+        <p>Control your stand-in bot remotely:</p>
+        
+        <!-- Join Voice Channel Form -->
+        <form action="/join" method="GET" style="margin-bottom: 20px;">
+          <input type="hidden" name="token" value="${ADMIN_TOKEN}">
+          <label style="display: block; margin-bottom: 5px;">Voice Channel ID:</label>
+          <input type="text" name="channelId" placeholder="Paste VC ID here..." style="padding: 8px; width: 300px; margin-right: 10px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
+          <button type="submit" style="padding: 8px 16px; background: #4da6ff; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Join VC</button>
+        </form>
+
+        <!-- Quick Action Buttons -->
+        <p>
+          <a href="/deafen?state=true&token=${ADMIN_TOKEN}" style="color: #4da6ff; margin-right: 15px;">Deafen Bot</a>
+          <a href="/deafen?state=false&token=${ADMIN_TOKEN}" style="color: #4da6ff; margin-right: 15px;">Undeafen Bot</a>
+          <a href="/leave?token=${ADMIN_TOKEN}" style="color: #ff4d4d;">Leave Voice Channel</a>
+        </p>
       </body>
     </html>
   `);
