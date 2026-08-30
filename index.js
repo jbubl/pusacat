@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
-const express = require('node_modules/express');
+const express = require('express');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
