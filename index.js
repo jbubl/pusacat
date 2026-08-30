@@ -23,7 +23,7 @@ client.once('ready', () => {
   console.log(`Pusacat is online as ${client.user.tag}`);
 });
 
-const renderDashboard = async (res, errorMessage = '') => {
+const renderDashboard = async (res, rawError = '') => {
   const guildId = process.env.GUILD_ID;
   let voiceChannels = [];
   let textChannels = [];
@@ -36,7 +36,7 @@ const renderDashboard = async (res, errorMessage = '') => {
       textChannels = channels.filter(c => c.isTextBased() && !c.isThread()).map(c => ({ id: c.id, name: c.name }));
     }
   } catch (err) {
-    errorMessage = errorMessage ? `${errorMessage} | ${err.message}` : err.message;
+    rawError = rawError ? `${rawError} | ${err.message}` : err.message;
   }
 
   res.send(`
@@ -45,28 +45,28 @@ const renderDashboard = async (res, errorMessage = '') => {
       <body style="font-family: sans-serif; background: #1e1e1e; color: #fff; padding: 40px;">
         <h2>🐾 Pusacat Control Panel</h2>
         
-        ${errorMessage ? `<div style="padding: 12px; margin-bottom: 20px; border-radius: 4px; background: #5c1d1d; border: 1px solid #ff4d4d;"><strong>Error:</strong> ${errorMessage}</div>` : ''}
+        ${rawError ? `<div style="padding: 12px; margin-bottom: 20px; border-radius: 4px; background: #5c1d1d; border: 1px solid #ff4d4d;"><strong>Error:</strong> ${rawError}</div>` : ''}
 
-        <!-- Join Voice Channel Form -->
+        <!-- Join Voice Channel Dropdown Form -->
         <form action="/join" method="GET" style="margin-bottom: 20px;">
-          <label style="display: block; margin-bottom: 5px;">Select Voice Channel:</label>
-          <select name="channelId" style="padding: 8px; width: 300px; margin-right: 10px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
+          <label style="display: block; margin-bottom: 5px;">Target Voice Channel:</label>
+          <select name="channelId" style="padding: 8px; width: 320px; margin-right: 10px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
             <option value="">-- Choose Voice Channel --</option>
             ${voiceChannels.map(vc => `<option value="${vc.id}">${vc.name} (${vc.id})</option>`).join('')}
           </select>
           <button type="submit" style="padding: 8px 16px; background: #4da6ff; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Join VC</button>
         </form>
 
-        <!-- Text Channels List for Reference -->
-        <div style="margin-bottom: 20px;">
-          <label style="display: block; margin-bottom: 5px;">Chatable Channels Reference:</label>
-          <select style="padding: 8px; width: 300px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;" disabled>
+        <!-- Chatable Text Channels Dropdown Reference -->
+        <div style="margin-bottom: 25px;">
+          <label style="display: block; margin-bottom: 5px;">Chatable Channels (Reference):</label>
+          <select style="padding: 8px; width: 320px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
             <option value="">-- Text Channels --</option>
             ${textChannels.map(tc => `<option value="${tc.id}">${tc.name} (${tc.id})</option>`).join('')}
           </select>
         </div>
 
-        <!-- Audio State Controls -->
+        <!-- Self Audio States & Disconnect -->
         <p>
           <a href="/audio?mute=true" style="color: #4da6ff; margin-right: 15px;">Self Mute On</a>
           <a href="/audio?mute=false" style="color: #4da6ff; margin-right: 15px;">Self Mute Off</a>
@@ -117,19 +117,15 @@ app.get('/audio', async (req, res) => {
   const guildId = process.env.GUILD_ID;
   if (!guildId) return renderDashboard(res, 'GUILD_ID environment variable is not set.');
 
-  const guild = client.guilds.cache.get(guildId);
-  if (!guild || !guild.members.me) {
-    return renderDashboard(res, 'Guild member cache unavailable for bot.');
-  }
-
   try {
+    const guild = await client.guilds.fetch(guildId);
+    const me = await guild.members.fetch(client.user.id);
+
     if (req.query.mute !== undefined) {
-      const shouldMute = req.query.mute === 'true';
-      await guild.members.me.voice.setSelfMute(shouldMute);
+      await me.voice.setSelfMute(req.query.mute === 'true');
     }
     if (req.query.deaf !== undefined) {
-      const shouldDeaf = req.query.deaf === 'true';
-      await guild.members.me.voice.setSelfDeaf(shouldDeaf);
+      await me.voice.setSelfDeaf(req.query.deaf === 'true');
     }
     await renderDashboard(res);
   } catch (err) {
