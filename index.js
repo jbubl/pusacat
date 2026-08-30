@@ -15,7 +15,7 @@ const client = new Client({
 
 // Protect all web routes with Basic Auth
 app.use(basicAuth({
-  users: { 'admin': process.env.ADMIN_PASSWORD || 'secretpassword' },
+  users: { 'admin': process.env.ADMIN_PASSWORD },
   challenge: true,
   realm: 'PusacatPanel',
 }));
