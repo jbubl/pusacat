@@ -6,7 +6,6 @@ const basicAuth = require('express-basic-auth');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware to parse URL-encoded bodies from POST forms
 app.use(express.urlencoded({ extended: true }));
 
 const client = new Client({
@@ -15,6 +14,11 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages
   ]
+});
+
+// Unauthenticated health-check endpoint for UptimeRobot
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
 });
 
 app.use(basicAuth({
@@ -27,10 +31,9 @@ client.once('ready', () => {
   console.log(`Pusacat is online as ${client.user.tag}`);
 });
 
-// Simple HTML entity escape helper to prevent XSS
 const escapeHtml = (str) => {
   if (!str) return '';
-  return String(str)
+  return str.toString()
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -38,7 +41,7 @@ const escapeHtml = (str) => {
     .replace(/'/g, '&#039;');
 };
 
-const renderDashboard = async (res, rawError = '') => {
+const renderDashboard = async (res, rawError = '', forceRefresh = false) => {
   const guildId = process.env.GUILD_ID;
   let voiceChannels = [];
   let textChannels = [];
@@ -48,7 +51,12 @@ const renderDashboard = async (res, rawError = '') => {
   try {
     if (guildId) {
       const guild = await client.guilds.fetch(guildId);
-      const channels = await guild.channels.fetch();
+      
+      // Force fetch from Discord API if requested, otherwise use client cache
+      const channels = forceRefresh 
+        ? await guild.channels.fetch({ force: true }) 
+        : await guild.channels.fetch();
+
       voiceChannels = channels.filter(c => c.isVoiceBased()).map(c => ({ id: c.id, name: c.name }));
       textChannels = channels.filter(c => c.isTextBased() && !c.isThread()).map(c => ({ id: c.id, name: c.name }));
 
@@ -68,11 +76,16 @@ const renderDashboard = async (res, rawError = '') => {
     <html>
       <head><title>Pusacat Control Panel</title></head>
       <body style="font-family: sans-serif; background: #1e1e1e; color: #fff; padding: 40px;">
-        <h2>🐾 Pusacat Control Panel</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h2 style="margin: 0;">🐾 Pusacat Control Panel</h2>
+          <form action="/refresh" method="POST" style="margin: 0;">
+            <button type="submit" style="padding: 6px 12px; background: #6c757d; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔄 Refresh Channels</button>
+          </form>
+        </div>
         
         ${safeError ? `<div style="padding: 12px; margin-bottom: 20px; border-radius: 4px; background: #5c1d1d; border: 1px solid #ff4d4d;"><strong>Error:</strong> ${safeError}</div>` : ''}
 
-        <!-- Join Voice Channel Dropdown Form (POST) -->
+        <!-- Join Voice Channel Dropdown Form -->
         <form action="/join" method="POST" style="margin-bottom: 20px;">
           <label style="display: block; margin-bottom: 5px;">Target Voice Channel:</label>
           <select name="channelId" style="padding: 8px; width: 320px; margin-right: 10px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
@@ -82,7 +95,7 @@ const renderDashboard = async (res, rawError = '') => {
           <button type="submit" style="padding: 8px 16px; background: #4da6ff; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Join VC</button>
         </form>
 
-        <!-- Send Text Message Form (POST) -->
+        <!-- Send Text Message Form -->
         <form action="/send" method="POST" style="margin-bottom: 25px;">
           <label style="display: block; margin-bottom: 5px;">Send Text Message:</label>
           <select name="channelId" style="padding: 8px; width: 320px; margin-bottom: 8px; display: block; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
@@ -93,28 +106,26 @@ const renderDashboard = async (res, rawError = '') => {
           <button type="submit" style="padding: 8px 16px; background: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Send</button>
         </form>
 
-        <!-- Dynamic Toggle Audio States & Disconnect (POST Forms instead of GET Links) -->
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <form action="/audio" method="POST" style="margin: 0;">
+        <!-- Dynamic Toggle Audio States & Disconnect -->
+        <p>
+          <form action="/audio" method="POST" style="display:inline;">
             <input type="hidden" name="mute" value="${!currentMuteState}">
             <input type="hidden" name="deaf" value="${currentDeafState}">
-            <button type="submit" style="color: #fff; background: ${currentMuteState ? '#a72828' : '#28a745'}; padding: 8px 14px; border: none; border-radius: 4px; cursor: pointer;">
+            <button type="submit" style="color: #fff; background: ${currentMuteState ? '#a72828' : '#28a745'}; padding: 8px 14px; border: none; border-radius: 4px; margin-right: 10px; cursor: pointer;">
               ${currentMuteState ? 'Unmute' : 'Mute'}
             </button>
           </form>
-
-          <form action="/audio" method="POST" style="margin: 0;">
+          <form action="/audio" method="POST" style="display:inline;">
             <input type="hidden" name="mute" value="${currentMuteState}">
             <input type="hidden" name="deaf" value="${!currentDeafState}">
-            <button type="submit" style="color: #fff; background: ${currentDeafState ? '#a72828' : '#28a745'}; padding: 8px 14px; border: none; border-radius: 4px; cursor: pointer;">
+            <button type="submit" style="color: #fff; background: ${currentDeafState ? '#a72828' : '#28a745'}; padding: 8px 14px; border: none; border-radius: 4px; margin-right: 15px; cursor: pointer;">
               ${currentDeafState ? 'Undeafen' : 'Deafen'}
             </button>
           </form>
-
-          <form action="/leave" method="POST" style="margin: 0;">
+          <form action="/leave" method="POST" style="display:inline;">
             <button type="submit" style="color: #fff; background: #dc3545; padding: 8px 14px; border: none; border-radius: 4px; cursor: pointer;">Leave VC</button>
           </form>
-        </div>
+        </p>
       </body>
     </html>
   `);
@@ -122,6 +133,10 @@ const renderDashboard = async (res, rawError = '') => {
 
 app.get('/', async (req, res) => {
   await renderDashboard(res);
+});
+
+app.post('/refresh', async (req, res) => {
+  await renderDashboard(res, '', true);
 });
 
 app.post('/join', async (req, res) => {
