@@ -9,12 +9,14 @@ const PORT = process.env.PORT || 3000;
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
   ]
 });
 
 app.use(basicAuth({
-  users: { 'admin': process.env.ADMIN_PASSWORD || 'secretpassword' },
+  users: { 'admin': process.env.ADMIN_PASSWORD },
   challenge: true,
   realm: 'PusacatPanel',
 }));
@@ -27,6 +29,8 @@ const renderDashboard = async (res, rawError = '') => {
   const guildId = process.env.GUILD_ID;
   let voiceChannels = [];
   let textChannels = [];
+  let currentMuteState = false;
+  let currentDeafState = true;
 
   try {
     if (guildId) {
@@ -34,6 +38,12 @@ const renderDashboard = async (res, rawError = '') => {
       const channels = await guild.channels.fetch();
       voiceChannels = channels.filter(c => c.isVoiceBased()).map(c => ({ id: c.id, name: c.name }));
       textChannels = channels.filter(c => c.isTextBased() && !c.isThread()).map(c => ({ id: c.id, name: c.name }));
+
+      const connection = getVoiceConnection(guildId);
+      if (connection && connection.joinConfig) {
+        currentMuteState = !!connection.joinConfig.selfMute;
+        currentDeafState = connection.joinConfig.selfDeaf !== undefined ? connection.joinConfig.selfDeaf : true;
+      }
     }
   } catch (err) {
     rawError = rawError ? `${rawError} | ${err.message}` : err.message;
@@ -57,22 +67,26 @@ const renderDashboard = async (res, rawError = '') => {
           <button type="submit" style="padding: 8px 16px; background: #4da6ff; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Join VC</button>
         </form>
 
-        <!-- Chatable Text Channels Dropdown Reference -->
-        <div style="margin-bottom: 25px;">
-          <label style="display: block; margin-bottom: 5px;">Chatable Channels (Reference):</label>
-          <select style="padding: 8px; width: 320px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
-            <option value="">-- Text Channels --</option>
+        <!-- Send Text Message Form -->
+        <form action="/send" method="GET" style="margin-bottom: 25px;">
+          <label style="display: block; margin-bottom: 5px;">Send Text Message:</label>
+          <select name="channelId" style="padding: 8px; width: 320px; margin-bottom: 8px; display: block; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
+            <option value="">-- Choose Text Channel --</option>
             ${textChannels.map(tc => `<option value="${tc.id}">${tc.name} (${tc.id})</option>`).join('')}
           </select>
-        </div>
+          <input type="text" name="message" placeholder="Type message here..." style="padding: 8px; width: 320px; margin-right: 10px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;" required>
+          <button type="submit" style="padding: 8px 16px; background: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Send</button>
+        </form>
 
-        <!-- Self Audio States & Disconnect -->
+        <!-- Dynamic Toggle Audio States & Disconnect -->
         <p>
-          <a href="/audio?mute=true" style="color: #4da6ff; margin-right: 15px;">Self Mute On</a>
-          <a href="/audio?mute=false" style="color: #4da6ff; margin-right: 15px;">Self Mute Off</a>
-          <a href="/audio?deaf=true" style="color: #4da6ff; margin-right: 15px;">Self Deafen On</a>
-          <a href="/audio?deaf=false" style="color: #4da6ff; margin-right: 15px;">Self Deafen Off</a>
-          <a href="/leave" style="color: #ff4d4d;">Leave VC</a>
+          <a href="/audio?mute=${!currentMuteState}&deaf=${currentDeafState}" style="color: #fff; background: ${currentMuteState ? '#a72828' : '#28a745'}; padding: 8px 14px; text-decoration: none; border-radius: 4px; margin-right: 10px; display: inline-block;">
+            ${currentMuteState ? 'Unmute' : 'Mute'}
+          </a>
+          <a href="/audio?mute=${currentMuteState}&deaf=${!currentDeafState}" style="color: #fff; background: ${currentDeafState ? '#a72828' : '#28a745'}; padding: 8px 14px; text-decoration: none; border-radius: 4px; margin-right: 15px; display: inline-block;">
+            ${currentDeafState ? 'Undeafen' : 'Deafen'}
+          </a>
+          <a href="/leave" style="color: #fff; background: #dc3545; padding: 8px 14px; text-decoration: none; border-radius: 4px; display: inline-block;">Leave VC</a>
         </p>
       </body>
     </html>
@@ -98,14 +112,35 @@ app.get('/join', async (req, res) => {
       return renderDashboard(res, `Invalid voice channel ID: ${channelId}`);
     }
 
+    const existingConn = getVoiceConnection(guildId);
+    const currentDeaf = existingConn ? !!existingConn.joinConfig.selfDeaf : true;
+    const currentMute = existingConn ? !!existingConn.joinConfig.selfMute : false;
+
     joinVoiceChannel({
       channelId: channel.id,
       guildId: guild.id,
       adapterCreator: guild.voiceAdapterCreator,
-      selfDeaf: true,
-      selfMute: false,
+      selfDeaf: currentDeaf,
+      selfMute: currentMute,
     });
 
+    await renderDashboard(res);
+  } catch (err) {
+    console.error(err);
+    await renderDashboard(res, err.message);
+  }
+});
+
+app.get('/send', async (req, res) => {
+  const { channelId, message } = req.query;
+  if (!channelId || !message) return renderDashboard(res, 'Missing channelId or message parameter.');
+
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel || !channel.isTextBased()) {
+      return renderDashboard(res, `Invalid text channel ID: ${channelId}`);
+    }
+    await channel.send(message);
     await renderDashboard(res);
   } catch (err) {
     console.error(err);
@@ -124,12 +159,8 @@ app.get('/audio', async (req, res) => {
     const shouldMute = req.query.mute === 'true';
     const shouldDeaf = req.query.deaf === 'true';
 
-    // Modify the underlying voice UDP client connection directly if active
-    const reconnectAddress = connection.joinConfig.channelId;
-    
-    // Re-join the same channel with updated self-deaf / self-mute parameters
     joinVoiceChannel({
-      channelId: reconnectAddress,
+      channelId: connection.joinConfig.channelId,
       guildId: guildId,
       adapterCreator: connection.voiceAdapterCreator,
       selfDeaf: shouldDeaf,
