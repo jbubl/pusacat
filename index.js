@@ -117,16 +117,25 @@ app.get('/audio', async (req, res) => {
   const guildId = process.env.GUILD_ID;
   if (!guildId) return renderDashboard(res, 'GUILD_ID environment variable is not set.');
 
-  try {
-    const guild = await client.guilds.fetch(guildId);
-    const me = await guild.members.fetch(client.user.id);
+  const connection = getVoiceConnection(guildId);
+  if (!connection) return renderDashboard(res, 'Pusacat is not connected to a voice channel.');
 
-    if (req.query.mute !== undefined) {
-      await me.voice.setSelfMute(req.query.mute === 'true');
-    }
-    if (req.query.deaf !== undefined) {
-      await me.voice.setSelfDeaf(req.query.deaf === 'true');
-    }
+  try {
+    const shouldMute = req.query.mute === 'true';
+    const shouldDeaf = req.query.deaf === 'true';
+
+    // Modify the underlying voice UDP client connection directly if active
+    const reconnectAddress = connection.joinConfig.channelId;
+    
+    // Re-join the same channel with updated self-deaf / self-mute parameters
+    joinVoiceChannel({
+      channelId: reconnectAddress,
+      guildId: guildId,
+      adapterCreator: connection.voiceAdapterCreator,
+      selfDeaf: shouldDeaf,
+      selfMute: shouldMute,
+    });
+
     await renderDashboard(res);
   } catch (err) {
     console.error(err);
