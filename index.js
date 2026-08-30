@@ -48,7 +48,7 @@ const renderDashboard = (res, message = '', isError = false) => {
       </body>
     </html>
   `);
-});
+};
 
 app.get('/', (req, res) => {
   renderDashboard(res);
