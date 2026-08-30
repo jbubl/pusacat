@@ -6,6 +6,9 @@ const basicAuth = require('express-basic-auth');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middleware to parse URL-encoded bodies from POST forms
+app.use(express.urlencoded({ extended: true }));
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -23,6 +26,17 @@ app.use(basicAuth({
 client.once('ready', () => {
   console.log(`Pusacat is online as ${client.user.tag}`);
 });
+
+// Simple HTML entity escape helper to prevent XSS
+const escapeHtml = (str) => {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
 
 const renderDashboard = async (res, rawError = '') => {
   const guildId = process.env.GUILD_ID;
@@ -48,45 +62,59 @@ const renderDashboard = async (res, rawError = '') => {
     rawError = rawError ? `${rawError} | ${err.message}` : err.message;
   }
 
+  const safeError = escapeHtml(rawError);
+
   res.send(`
     <html>
       <head><title>Pusacat Control Panel</title></head>
       <body style="font-family: sans-serif; background: #1e1e1e; color: #fff; padding: 40px;">
         <h2>🐾 Pusacat Control Panel</h2>
         
-        ${rawError ? `<div style="padding: 12px; margin-bottom: 20px; border-radius: 4px; background: #5c1d1d; border: 1px solid #ff4d4d;"><strong>Error:</strong> ${rawError}</div>` : ''}
+        ${safeError ? `<div style="padding: 12px; margin-bottom: 20px; border-radius: 4px; background: #5c1d1d; border: 1px solid #ff4d4d;"><strong>Error:</strong> ${safeError}</div>` : ''}
 
-        <!-- Join Voice Channel Dropdown Form -->
-        <form action="/join" method="GET" style="margin-bottom: 20px;">
+        <!-- Join Voice Channel Dropdown Form (POST) -->
+        <form action="/join" method="POST" style="margin-bottom: 20px;">
           <label style="display: block; margin-bottom: 5px;">Target Voice Channel:</label>
           <select name="channelId" style="padding: 8px; width: 320px; margin-right: 10px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
             <option value="">-- Choose Voice Channel --</option>
-            ${voiceChannels.map(vc => `<option value="${vc.id}">${vc.name} (${vc.id})</option>`).join('')}
+            ${voiceChannels.map(vc => `<option value="${escapeHtml(vc.id)}">${escapeHtml(vc.name)} (${escapeHtml(vc.id)})</option>`).join('')}
           </select>
           <button type="submit" style="padding: 8px 16px; background: #4da6ff; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Join VC</button>
         </form>
 
-        <!-- Send Text Message Form -->
-        <form action="/send" method="GET" style="margin-bottom: 25px;">
+        <!-- Send Text Message Form (POST) -->
+        <form action="/send" method="POST" style="margin-bottom: 25px;">
           <label style="display: block; margin-bottom: 5px;">Send Text Message:</label>
           <select name="channelId" style="padding: 8px; width: 320px; margin-bottom: 8px; display: block; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;">
             <option value="">-- Choose Text Channel --</option>
-            ${textChannels.map(tc => `<option value="${tc.id}">${tc.name} (${tc.id})</option>`).join('')}
+            ${textChannels.map(tc => `<option value="${escapeHtml(tc.id)}">${escapeHtml(tc.name)} (${escapeHtml(tc.id)})</option>`).join('')}
           </select>
           <input type="text" name="message" placeholder="Type message here..." style="padding: 8px; width: 320px; margin-right: 10px; background: #2d2d2d; color: #fff; border: 1px solid #444; border-radius: 4px;" required>
           <button type="submit" style="padding: 8px 16px; background: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Send</button>
         </form>
 
-        <!-- Dynamic Toggle Audio States & Disconnect -->
-        <p>
-          <a href="/audio?mute=${!currentMuteState}&deaf=${currentDeafState}" style="color: #fff; background: ${currentMuteState ? '#a72828' : '#28a745'}; padding: 8px 14px; text-decoration: none; border-radius: 4px; margin-right: 10px; display: inline-block;">
-            ${currentMuteState ? 'Unmute' : 'Mute'}
-          </a>
-          <a href="/audio?mute=${currentMuteState}&deaf=${!currentDeafState}" style="color: #fff; background: ${currentDeafState ? '#a72828' : '#28a745'}; padding: 8px 14px; text-decoration: none; border-radius: 4px; margin-right: 15px; display: inline-block;">
-            ${currentDeafState ? 'Undeafen' : 'Deafen'}
-          </a>
-          <a href="/leave" style="color: #fff; background: #dc3545; padding: 8px 14px; text-decoration: none; border-radius: 4px; display: inline-block;">Leave VC</a>
-        </p>
+        <!-- Dynamic Toggle Audio States & Disconnect (POST Forms instead of GET Links) -->
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <form action="/audio" method="POST" style="margin: 0;">
+            <input type="hidden" name="mute" value="${!currentMuteState}">
+            <input type="hidden" name="deaf" value="${currentDeafState}">
+            <button type="submit" style="color: #fff; background: ${currentMuteState ? '#a72828' : '#28a745'}; padding: 8px 14px; border: none; border-radius: 4px; cursor: pointer;">
+              ${currentMuteState ? 'Unmute' : 'Mute'}
+            </button>
+          </form>
+
+          <form action="/audio" method="POST" style="margin: 0;">
+            <input type="hidden" name="mute" value="${currentMuteState}">
+            <input type="hidden" name="deaf" value="${!currentDeafState}">
+            <button type="submit" style="color: #fff; background: ${currentDeafState ? '#a72828' : '#28a745'}; padding: 8px 14px; border: none; border-radius: 4px; cursor: pointer;">
+              ${currentDeafState ? 'Undeafen' : 'Deafen'}
+            </button>
+          </form>
+
+          <form action="/leave" method="POST" style="margin: 0;">
+            <button type="submit" style="color: #fff; background: #dc3545; padding: 8px 14px; border: none; border-radius: 4px; cursor: pointer;">Leave VC</button>
+          </form>
+        </div>
       </body>
     </html>
   `);
@@ -96,8 +124,8 @@ app.get('/', async (req, res) => {
   await renderDashboard(res);
 });
 
-app.get('/join', async (req, res) => {
-  const channelId = req.query.channelId;
+app.post('/join', async (req, res) => {
+  const channelId = req.body.channelId;
   const guildId = process.env.GUILD_ID;
 
   if (!channelId) return renderDashboard(res, 'Missing channelId parameter.');
@@ -130,8 +158,8 @@ app.get('/join', async (req, res) => {
   }
 });
 
-app.get('/send', async (req, res) => {
-  const { channelId, message } = req.query;
+app.post('/send', async (req, res) => {
+  const { channelId, message } = req.body;
   if (!channelId || !message) return renderDashboard(res, 'Missing channelId or message parameter.');
 
   try {
@@ -147,7 +175,7 @@ app.get('/send', async (req, res) => {
   }
 });
 
-app.get('/audio', async (req, res) => {
+app.post('/audio', async (req, res) => {
   const guildId = process.env.GUILD_ID;
   if (!guildId) return renderDashboard(res, 'GUILD_ID environment variable is not set.');
 
@@ -155,8 +183,8 @@ app.get('/audio', async (req, res) => {
   if (!connection) return renderDashboard(res, 'Pusacat is not connected to a voice channel.');
 
   try {
-    const shouldMute = req.query.mute === 'true';
-    const shouldDeaf = req.query.deaf === 'true';
+    const shouldMute = req.body.mute === 'true';
+    const shouldDeaf = req.body.deaf === 'true';
 
     joinVoiceChannel({
       channelId: connection.joinConfig.channelId,
@@ -173,7 +201,7 @@ app.get('/audio', async (req, res) => {
   }
 });
 
-app.get('/leave', async (req, res) => {
+app.post('/leave', async (req, res) => {
   const guildId = process.env.GUILD_ID;
   if (!guildId) return renderDashboard(res, 'GUILD_ID environment variable is not set.');
 
