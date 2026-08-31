@@ -52,8 +52,8 @@ const renderDashboard = async (res, rawError = '', forceFetch = false) => {
     if (guildId) {
       const guild = await client.guilds.fetch(guildId);
       
-      // Only hit the Discord REST API if forced or if cache is empty
-      if (forceFetch || guild.channels.cache.size === 0) {
+      // Only fetch channels from Discord if the user explicitly clicked Refresh
+      if (forceFetch) {
         await guild.channels.fetch();
       }
 
@@ -80,8 +80,8 @@ const renderDashboard = async (res, rawError = '', forceFetch = false) => {
           
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h2 style="margin: 0;">🐾 Pusacat Panel</h2>
-            <form action="/" method="GET" style="margin: 0;">
-              <button type="submit" style="background: #333; color: #aaa; border: 1px solid #555; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Refresh</button>
+            <form action="/refresh" method="POST" style="margin: 0;">
+              <button type="submit" style="background: #333; color: #aaa; border: 1px solid #555; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Refresh Channels</button>
             </form>
           </div>
           
@@ -136,8 +136,13 @@ const renderDashboard = async (res, rawError = '', forceFetch = false) => {
 };
 
 app.get('/', async (req, res) => {
-  // Default to cached data unless the user explicitly forces a refresh
+  // Loads instantly using purely local cache without making an automated API fetch
   await renderDashboard(res, '', false);
+});
+
+app.post('/refresh', async (req, res) => {
+  // Explicit hard fetch triggered only when the user clicks the refresh button
+  await renderDashboard(res, '', true);
 });
 
 app.post('/join', async (req, res) => {
