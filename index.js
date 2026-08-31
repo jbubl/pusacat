@@ -52,14 +52,13 @@ const renderDashboard = async (res, rawError = '', forceFetch = false) => {
     if (guildId) {
       const guild = await client.guilds.fetch(guildId);
       
-      // Force clear the cache if the refresh button was clicked
-      if (forceFetch) {
-        guild.channels.cache.clear();
+      // Only hit the Discord REST API if forced or if cache is empty
+      if (forceFetch || guild.channels.cache.size === 0) {
+        await guild.channels.fetch();
       }
 
-      const channels = await guild.channels.fetch();
-      voiceChannels = channels.filter(c => c.isVoiceBased()).map(c => ({ id: c.id, name: c.name }));
-      textChannels = channels.filter(c => c.isTextBased() && !c.isThread()).map(c => ({ id: c.id, name: c.name }));
+      voiceChannels = guild.channels.cache.filter(c => c.isVoiceBased()).map(c => ({ id: c.id, name: c.name }));
+      textChannels = guild.channels.cache.filter(c => c.isTextBased() && !c.isThread()).map(c => ({ id: c.id, name: c.name }));
 
       const connection = getVoiceConnection(guildId);
       if (connection && connection.joinConfig) {
@@ -137,7 +136,8 @@ const renderDashboard = async (res, rawError = '', forceFetch = false) => {
 };
 
 app.get('/', async (req, res) => {
-  await renderDashboard(res, '', true);
+  // Default to cached data unless the user explicitly forces a refresh
+  await renderDashboard(res, '', false);
 });
 
 app.post('/join', async (req, res) => {
@@ -149,7 +149,10 @@ app.post('/join', async (req, res) => {
 
   try {
     const guild = await client.guilds.fetch(guildId);
-    const channel = await guild.channels.fetch(channelId);
+    let channel = guild.channels.cache.get(channelId);
+    if (!channel) {
+      channel = await guild.channels.fetch(channelId);
+    }
 
     if (!channel || !channel.isVoiceBased()) {
       return renderDashboard(res, `Invalid voice channel ID: ${channelId}`);
@@ -179,7 +182,11 @@ app.post('/send', async (req, res) => {
   if (!channelId || !message) return renderDashboard(res, 'Missing channelId or message parameter.');
 
   try {
-    const channel = await client.channels.fetch(channelId);
+    let channel = client.channels.cache.get(channelId);
+    if (!channel) {
+      channel = await client.channels.fetch(channelId);
+    }
+
     if (!channel || !channel.isTextBased()) {
       return renderDashboard(res, `Invalid text channel ID: ${channelId}`);
     }
